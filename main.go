@@ -298,7 +298,7 @@ func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		html := `
 		<div class="max-w-xl mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-			<h2 class="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2"><span>🛠️</span> ฟอร์มแจ้งซ่อมอุปกรณ์ IT (ฟอร์มที่ 1)</h2>
+			<h2 class="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2"><span>🛠️</span> ฟอร์มแจ้งซ่อมอุปกรณ์ IT </h2>
 			<form method="POST" class="space-y-4">
 				<div>
 					<label class="block text-sm text-slate-400 mb-1">หัวข้อปัญหา</label>
@@ -360,7 +360,7 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		html := fmt.Sprintf(`
 		<div class="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-			<h2 class="text-2xl font-bold text-cyan-400 mb-6">👤 แก้ไขข้อมูลส่วนตัว (ฟอร์มที่ 2)</h2>
+			<h2 class="text-2xl font-bold text-cyan-400 mb-6">👤 แก้ไขข้อมูลส่วนตัว </h2>
 			<form method="POST" class="space-y-4">
 				<div>
 					<label class="block text-sm text-slate-400 mb-1">อีเมล (อ่านอย่างเดียว)</label>
