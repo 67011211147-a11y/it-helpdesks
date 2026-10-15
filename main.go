@@ -463,8 +463,28 @@ func main() {
 		panic("เชื่อมต่อฐานข้อมูลล้มเหลว: " + err.Error())
 	}
 
+	// Auto Migration
 	db.AutoMigrate(&User{}, &Ticket{})
 
+	// ==========================================
+	// AUTO-CREATE DEFAULT ADMIN ACCOUNT
+	// ==========================================
+	var adminCount int64
+	db.Model(&User{}).Where("role = ?", RoleAdmin).Count(&adminCount)
+	if adminCount == 0 {
+		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("admin1234"), 10)
+		defaultAdmin := User{
+			Email:      "admin@helpdesk.com",
+			Password:   string(hashedPassword),
+			Role:       RoleAdmin,
+			FullName:   "System Administrator",
+			Department: "IT Support",
+		}
+		db.Create(&defaultAdmin)
+		fmt.Println("🔑 สร้างบัญชี Admin เริ่มต้นเรียบร้อย: admin@helpdesk.com / admin1234")
+	}
+
+	// Routing Setup
 	http.HandleFunc("/register", RegisterPage)
 	http.HandleFunc("/login", LoginPage)
 	http.HandleFunc("/logout", LogoutHandler)
@@ -480,7 +500,7 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 
-	// อ่าน Port จาก Environment Variable ที่ Render กำหนด
+	// อ่าน Port จาก Environment Variable
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
