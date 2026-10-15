@@ -202,7 +202,11 @@ func LoginPage(w http.ResponseWriter, r *http.Request) {
 	sessionToken := fmt.Sprintf("token_%d_%d", user.ID, time.Now().UnixNano())
 	sessions[sessionToken] = user.ID
 	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: sessionToken, Path: "/"})
-	http.Redirect(w, r, "/tickets", http.StatusSeeOther)
+	http.Redirectif user.Role == RoleAdmin {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/tickets", http.StatusSeeOther)
+	}
 }
 
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
