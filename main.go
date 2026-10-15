@@ -156,37 +156,7 @@ func RegisterPage(w http.ResponseWriter, r *http.Request) {
 		Email:    r.FormValue("email"),
 		Password: string(hashedPassword),
 		FullName: r.FormValue("full_name"),
-		Role:     RoleUser, // กำหนดให้ทุกคนที่สมัครใหม่เป็น User ทันที
-	}
-
-	if err := db.Create(&user).Error; err != nil {
-		http.Error(w, "Email นี้ถูกใช้งานในระบบแล้ว", http.StatusBadRequest)
-		return
-	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), 10)
-	user := User{
-		Email:    r.FormValue("email"),
-		Password: string(hashedPassword),
-		FullName: r.FormValue("full_name"),
-		Role:     RoleUser, // กำหนดให้ทุกคนที่สมัครใหม่เป็น User ทันที
-	}
-
-	if err := db.Create(&user).Error; err != nil {
-		http.Error(w, "Email นี้ถูกใช้งานในระบบแล้ว", http.StatusBadRequest)
-		return
-	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), 10)
-	user := User{
-		Email:    r.FormValue("email"),
-		Password: string(hashedPassword),
-		FullName: r.FormValue("full_name"),
-		Role:     Role(r.FormValue("role")),
+		Role:     RoleUser, // กำหนดบทบาทเป็น User ทันที
 	}
 
 	if err := db.Create(&user).Error; err != nil {
@@ -489,9 +459,7 @@ func main() {
 	// Auto Migration
 	db.AutoMigrate(&User{}, &Ticket{})
 
-	// ==========================================
-	// AUTO-CREATE DEFAULT ADMIN ACCOUNT
-	// ==========================================
+	// Auto-Create Default Admin Account
 	var adminCount int64
 	db.Model(&User{}).Where("role = ?", RoleAdmin).Count(&adminCount)
 	if adminCount == 0 {
@@ -504,10 +472,9 @@ func main() {
 			Department: "IT Support",
 		}
 		db.Create(&defaultAdmin)
-		fmt.Println("🔑 สร้างบัญชี Admin เริ่มต้นเรียบร้อย: admin@helpdesk.com / admin1234")
+		fmt.Println("🔑 สร้างบัญชี Admin เรียบร้อย: admin@helpdesk.com / admin1234")
 	}
 
-	// Routing Setup
 	http.HandleFunc("/register", RegisterPage)
 	http.HandleFunc("/login", LoginPage)
 	http.HandleFunc("/logout", LogoutHandler)
@@ -523,7 +490,7 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 
-	// อ่าน Port จาก Environment Variable
+	// อ่าน Port จาก Environment Variable ที่ Render กำหนด
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
