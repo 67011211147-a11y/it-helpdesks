@@ -156,7 +156,7 @@ func RegisterPage(w http.ResponseWriter, r *http.Request) {
 		Email:    r.FormValue("email"),
 		Password: string(hashedPassword),
 		FullName: r.FormValue("full_name"),
-		Role:     RoleUser, // กำหนดบทบาทเป็น User ทันที
+		Role:     RoleUser,
 	}
 
 	if err := db.Create(&user).Error; err != nil {
@@ -202,7 +202,9 @@ func LoginPage(w http.ResponseWriter, r *http.Request) {
 	sessionToken := fmt.Sprintf("token_%d_%d", user.ID, time.Now().UnixNano())
 	sessions[sessionToken] = user.ID
 	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: sessionToken, Path: "/"})
-	http.Redirectif user.Role == RoleAdmin {
+
+	// Redirect ตามบทบาท (Admin -> /admin, User -> /tickets)
+	if user.Role == RoleAdmin {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/tickets", http.StatusSeeOther)
@@ -218,8 +220,6 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// --- CRUD READ: แสดงเฉพาะตั๋วที่เป็นของตนเอง (Data Ownership) ---
-
 func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value("user").(User)
 
@@ -228,7 +228,6 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// ส่วนที่เพิ่ม: แถบแจ้งเตือนสีทองสำหรับ Admin
 	adminNotice := ""
 	if user.Role == RoleAdmin {
 		adminNotice = `
@@ -244,7 +243,7 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	html := fmt.Sprintf(`
-	%s <!-- แสดงแถบ Admin Notice ถ้าเป็น Admin -->
+	%s
 
 	<div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-800 p-6 rounded-2xl mb-8 flex justify-between items-center shadow-xl">
 		<div>
@@ -291,7 +290,6 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 	html += `</tbody></table></div></div>`
 	tpl.Execute(w, template.HTML(html))
 }
-// --- Form 1: Create Ticket ---
 
 func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value("user").(User)
@@ -330,7 +328,7 @@ func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
 		Title:       r.FormValue("title"),
 		DeviceType:  r.FormValue("device_type"),
 		Description: r.FormValue("description"),
-		UserID:      user.ID, // ผูก ID เจ้าของตั๋ว
+		UserID:      user.ID,
 	}
 	db.Create(&ticket)
 	http.Redirect(w, r, "/tickets", http.StatusSeeOther)
@@ -346,7 +344,6 @@ func DeleteTicketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DELETE DATA OWNERSHIP CHECK: ผู้ใช้ A ต้องลบตั๋วของผู้ใช้ B ไม่ได้
 	if ticket.UserID != user.ID && user.Role != RoleAdmin {
 		http.Error(w, "Forbidden: คุณไม่มีสิทธิ์ลบรายการของผู้อื่น", http.StatusForbidden)
 		return
@@ -355,8 +352,6 @@ func DeleteTicketHandler(w http.ResponseWriter, r *http.Request) {
 	db.Delete(&ticket)
 	http.Redirect(w, r, "/tickets", http.StatusSeeOther)
 }
-
-// --- Form 2: Profile Update ---
 
 func ProfilePage(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value("user").(User)
@@ -392,8 +387,6 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/tickets", http.StatusSeeOther)
 }
-
-// --- Feature 5: Admin Dashboard ---
 
 func AdminDashboardPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
@@ -477,10 +470,8 @@ func main() {
 		panic("เชื่อมต่อฐานข้อมูลล้มเหลว: " + err.Error())
 	}
 
-	// Auto Migration
 	db.AutoMigrate(&User{}, &Ticket{})
 
-	// Auto-Create Default Admin Account
 	var adminCount int64
 	db.Model(&User{}).Where("role = ?", RoleAdmin).Count(&adminCount)
 	if adminCount == 0 {
@@ -511,7 +502,6 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 
-	// อ่าน Port จาก Environment Variable ที่ Render กำหนด
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
