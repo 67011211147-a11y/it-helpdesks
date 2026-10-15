@@ -143,13 +143,6 @@ func RegisterPage(w http.ResponseWriter, r *http.Request) {
 					<div><label class="block text-sm mb-1 text-slate-400">อีเมล</label><input type="email" name="email" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500"></div>
 					<div><label class="block text-sm mb-1 text-slate-400">รหัสผ่าน</label><input type="password" name="password" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500"></div>
 					<div><label class="block text-sm mb-1 text-slate-400">ชื่อ-นามสกุล</label><input type="text" name="full_name" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500"></div>
-					<div>
-						<label class="block text-sm mb-1 text-slate-400">บทบาทในระบบ</label>
-						<select name="role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500">
-							<option value="user">User (พนักงานทั่วไป)</option>
-							<option value="admin">Admin (เจ้าหน้าที่ IT Support)</option>
-						</select>
-					</div>
 					<button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-3 rounded-lg shadow-lg shadow-cyan-500/20 transition">ลงทะเบียน</button>
 				</form>
 				<p class="text-center text-sm text-slate-400 mt-4">มีบัญชีอยู่แล้ว? <a href="/login" class="text-cyan-400 hover:underline">เข้าสู่ระบบ</a></p>
@@ -157,6 +150,21 @@ func RegisterPage(w http.ResponseWriter, r *http.Request) {
 		</body></html>`)
 		return
 	}
+
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), 10)
+	user := User{
+		Email:    r.FormValue("email"),
+		Password: string(hashedPassword),
+		FullName: r.FormValue("full_name"),
+		Role:     RoleUser, // กำหนดให้ทุกคนที่สมัครใหม่เป็น User ทันที
+	}
+
+	if err := db.Create(&user).Error; err != nil {
+		http.Error(w, "Email นี้ถูกใช้งานในระบบแล้ว", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), 10)
 	user := User{
