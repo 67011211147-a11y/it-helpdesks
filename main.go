@@ -223,7 +223,25 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 	db.Where("user_id = ?", user.ID).Order("created_at desc").Find(&tickets)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	// ส่วนที่เพิ่ม: แถบแจ้งเตือนสีทองสำหรับ Admin
+	adminNotice := ""
+	if user.Role == RoleAdmin {
+		adminNotice = `
+		<div class="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl mb-6 flex flex-wrap justify-between items-center text-amber-400">
+			<div class="flex items-center space-x-2">
+				<span class="text-xl">👑</span>
+				<span class="font-semibold text-sm">คุณกำลังเข้าใช้งานในสิทธิ์ Admin (เจ้าหน้าที่ IT)</span>
+			</div>
+			<a href="/admin" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm shadow-lg shadow-amber-500/20 transition">
+				ไปที่หน้าจัดการ Admin Panel ➔
+			</a>
+		</div>`
+	}
+
 	html := fmt.Sprintf(`
+	%s <!-- แสดงแถบ Admin Notice ถ้าเป็น Admin -->
+
 	<div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-800 p-6 rounded-2xl mb-8 flex justify-between items-center shadow-xl">
 		<div>
 			<h1 class="text-2xl font-bold">สวัสดี, <span class="text-cyan-400">%s</span></h1>
@@ -246,7 +264,7 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 						<th class="p-3">จัดการ</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-slate-800/50 text-sm">`, user.FullName, user.Department, user.Role)
+				<tbody class="divide-y divide-slate-800/50 text-sm">`, adminNotice, user.FullName, user.Department, user.Role)
 
 	for _, t := range tickets {
 		statusBadge := fmt.Sprintf(`<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">%s</span>`, t.Status)
@@ -269,7 +287,6 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 	html += `</tbody></table></div></div>`
 	tpl.Execute(w, template.HTML(html))
 }
-
 // --- Form 1: Create Ticket ---
 
 func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
