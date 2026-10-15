@@ -171,6 +171,21 @@ func RegisterPage(w http.ResponseWriter, r *http.Request) {
 		Email:    r.FormValue("email"),
 		Password: string(hashedPassword),
 		FullName: r.FormValue("full_name"),
+		Role:     RoleUser, // กำหนดให้ทุกคนที่สมัครใหม่เป็น User ทันที
+	}
+
+	if err := db.Create(&user).Error; err != nil {
+		http.Error(w, "Email นี้ถูกใช้งานในระบบแล้ว", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), 10)
+	user := User{
+		Email:    r.FormValue("email"),
+		Password: string(hashedPassword),
+		FullName: r.FormValue("full_name"),
 		Role:     Role(r.FormValue("role")),
 	}
 
