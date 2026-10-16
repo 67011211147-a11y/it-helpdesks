@@ -41,8 +41,9 @@ type Ticket struct {
 	Title       string    `gorm:"not null" json:"title"`
 	Description string    `gorm:"type:text" json:"description"`
 	DeviceType  string    `json:"device_type"`
-	Status      string    `gorm:"default:'Pending'" json:"status"` // Pending, In-Progress, Resolved
-	UserID      uint      `gorm:"not null" json:"user_id"`         // Data Ownership Check
+	Priority    string    `gorm:"default:'Medium'" json:"priority"` // Low, Medium, High, Critical
+	Status      string    `gorm:"default:'Pending'" json:"status"`   // Pending, In-Progress, Resolved
+	UserID      uint      `gorm:"not null" json:"user_id"`           // Data Ownership Check
 	User        User      `gorm:"foreignKey:UserID"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -54,6 +55,11 @@ var sessions = make(map[string]uint)
 // ==========================================
 // 2. TEMPLATES (Tailwind CSS Dark Theme)
 // ==========================================
+
+type PageData struct {
+	Content template.HTML
+	IsAdmin bool
+}
 
 var tpl = template.Must(template.New("layout").Parse(`
 <!DOCTYPE html>
@@ -78,18 +84,58 @@ var tpl = template.Must(template.New("layout").Parse(`
             <a href="/tickets" class="hover:text-cyan-400 transition">ตั๋วแจ้งซ่อมของฉัน</a>
             <a href="/tickets/new" class="text-cyan-400 hover:text-cyan-300 font-semibold bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20 transition">+ แจ้งซ่อมใหม่ (ฟอร์ม 1)</a>
             <a href="/profile" class="hover:text-cyan-400 transition">ข้อมูลส่วนตัว (ฟอร์ม 2)</a>
+            {{if .IsAdmin}}
             <a href="/admin" class="text-amber-400 hover:text-amber-300 font-bold transition">Admin Panel</a>
+            {{end}}
             <a href="/logout" class="text-rose-400 hover:text-rose-300 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20 transition">ออกจากระบบ</a>
         </div>
     </nav>
 
     <!-- Main Container -->
     <div class="max-w-6xl mx-auto px-4 py-8">
-        {{.}}
+        {{.Content}}
     </div>
 </body>
 </html>
 `))
+
+func renderPage(w http.ResponseWriter, r *http.Request, content string) {
+	isAdmin := false
+	if u, ok := r.Context().Value("user").(User); ok {
+		if u.Role == RoleAdmin {
+			isAdmin = true
+		}
+	}
+	tpl.Execute(w, PageData{
+		Content: template.HTML(content),
+		IsAdmin: isAdmin,
+	})
+}
+
+// UI Badges Helper Functions
+func getPriorityBadge(priority string) string {
+	switch priority {
+	case "Critical":
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">🔥 ด่วนที่สุด</span>`
+	case "High":
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ ด่วนมาก</span>`
+	case "Medium":
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">🟡 ปานกลาง</span>`
+	default:
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">🔵 ปกติ</span>`
+	}
+}
+
+func getStatusBadge(status string) string {
+	switch status {
+	case "In-Progress":
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">⏳ กำลังดำเนินการ</span>`
+	case "Resolved":
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">✅ แก้ไขเสร็จสิ้น</span>`
+	default:
+		return `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">🕒 รอดำเนินการ</span>`
+	}
+}
 
 // ==========================================
 // 3. MIDDLEWARES & AUTHENTICATION
@@ -201,9 +247,17 @@ func LoginPage(w http.ResponseWriter, r *http.Request) {
 
 	sessionToken := fmt.Sprintf("token_%d_%d", user.ID, time.Now().UnixNano())
 	sessions[sessionToken] = user.ID
-	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: sessionToken, Path: "/"})
 
-	// Redirect ตามบทบาท (Admin -> /admin, User -> /tickets)
+	// Secure Cookie Config
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    sessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400, // 24 Hours
+	})
+
 	if user.Role == RoleAdmin {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	} else {
@@ -262,33 +316,28 @@ func UserTicketsPage(w http.ResponseWriter, r *http.Request) {
 						<th class="p-3">ID</th>
 						<th class="p-3">หัวข้อแจ้งซ่อม</th>
 						<th class="p-3">ประเภทอุปกรณ์</th>
-						<th class="p-3">รายละเอียดอาการ</th>
+						<th class="p-3">ความด่วน</th>
 						<th class="p-3">สถานะ</th>
+						<th class="p-3">วันที่แจ้ง</th>
 						<th class="p-3">จัดการ</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-800/50 text-sm">`, adminNotice, user.FullName, user.Department, user.Role)
 
 	for _, t := range tickets {
-		statusBadge := fmt.Sprintf(`<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">%s</span>`, t.Status)
-		if t.Status == "In-Progress" {
-			statusBadge = fmt.Sprintf(`<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">%s</span>`, t.Status)
-		} else if t.Status == "Resolved" {
-			statusBadge = fmt.Sprintf(`<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">%s</span>`, t.Status)
-		}
-
 		html += fmt.Sprintf(`<tr>
 			<td class="p-3">#%d</td>
 			<td class="p-3 font-semibold text-cyan-400">%s</td>
 			<td class="p-3">%s</td>
-			<td class="p-3 text-slate-400">%s</td>
 			<td class="p-3">%s</td>
+			<td class="p-3">%s</td>
+			<td class="p-3 text-slate-400 text-xs">%s</td>
 			<td class="p-3"><a href="/tickets/delete?id=%d" class="text-rose-400 hover:underline">ยกเลิก/ลบ</a></td>
-		</tr>`, t.ID, t.Title, t.DeviceType, t.Description, statusBadge, t.ID)
+		</tr>`, t.ID, t.Title, t.DeviceType, getPriorityBadge(t.Priority), getStatusBadge(t.Status), t.CreatedAt.Format("02/01/2006 15:04"), t.ID)
 	}
 
 	html += `</tbody></table></div></div>`
-	tpl.Execute(w, template.HTML(html))
+	renderPage(w, r, html)
 }
 
 func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
@@ -298,20 +347,31 @@ func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		html := `
 		<div class="max-w-xl mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-			<h2 class="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2"><span>🛠️</span> ฟอร์มแจ้งซ่อมอุปกรณ์ IT </h2>
+			<h2 class="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2"><span>🛠️</span> ฟอร์มแจ้งซ่อมอุปกรณ์ IT (ฟอร์มที่ 1)</h2>
 			<form method="POST" class="space-y-4">
 				<div>
 					<label class="block text-sm text-slate-400 mb-1">หัวข้อปัญหา</label>
 					<input type="text" name="title" required placeholder="เช่น จอภาพไม่ติด, ออกอินเทอร์เน็ตไม่ได้" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:border-cyan-500 focus:outline-none">
 				</div>
-				<div>
-					<label class="block text-sm text-slate-400 mb-1">ประเภทหมวดหมู่อุปกรณ์</label>
-					<select name="device_type" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:border-cyan-500 focus:outline-none">
-						<option value="Computer/Laptop">Computer / Laptop</option>
-						<option value="Printer/Scanner">Printer / Scanner</option>
-						<option value="Network/Wi-Fi">Network / Wi-Fi</option>
-						<option value="Software/OS">Software / Operating System</option>
-					</select>
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div>
+						<label class="block text-sm text-slate-400 mb-1">ประเภทอุปกรณ์</label>
+						<select name="device_type" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:border-cyan-500 focus:outline-none">
+							<option value="Computer/Laptop">Computer / Laptop</option>
+							<option value="Printer/Scanner">Printer / Scanner</option>
+							<option value="Network/Wi-Fi">Network / Wi-Fi</option>
+							<option value="Software/OS">Software / Operating System</option>
+						</select>
+					</div>
+					<div>
+						<label class="block text-sm text-slate-400 mb-1">ระดับความด่วน (Priority)</label>
+						<select name="priority" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:border-cyan-500 focus:outline-none">
+							<option value="Low">🔵 ปกติ (Low)</option>
+							<option value="Medium" selected>🟡 ปานกลาง (Medium)</option>
+							<option value="High">⚡ ด่วนมาก (High)</option>
+							<option value="Critical">🔥 ด่วนที่สุด (Critical)</option>
+						</select>
+					</div>
 				</div>
 				<div>
 					<label class="block text-sm text-slate-400 mb-1">รายละเอียดอาการชำรุดเพิ่มเติม</label>
@@ -320,13 +380,14 @@ func CreateTicketPage(w http.ResponseWriter, r *http.Request) {
 				<button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-3 rounded-lg shadow-lg shadow-cyan-500/20 transition">ส่งเรื่องแจ้งซ่อม</button>
 			</form>
 		</div>`
-		tpl.Execute(w, template.HTML(html))
+		renderPage(w, r, html)
 		return
 	}
 
 	ticket := Ticket{
 		Title:       r.FormValue("title"),
 		DeviceType:  r.FormValue("device_type"),
+		Priority:    r.FormValue("priority"),
 		Description: r.FormValue("description"),
 		UserID:      user.ID,
 	}
@@ -350,7 +411,11 @@ func DeleteTicketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db.Delete(&ticket)
-	http.Redirect(w, r, "/tickets", http.StatusSeeOther)
+	if user.Role == RoleAdmin {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/tickets", http.StatusSeeOther)
+	}
 }
 
 func ProfilePage(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +425,7 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		html := fmt.Sprintf(`
 		<div class="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-			<h2 class="text-2xl font-bold text-cyan-400 mb-6">👤 แก้ไขข้อมูลส่วนตัว </h2>
+			<h2 class="text-2xl font-bold text-cyan-400 mb-6">👤 แก้ไขข้อมูลส่วนตัว (ฟอร์มที่ 2)</h2>
 			<form method="POST" class="space-y-4">
 				<div>
 					<label class="block text-sm text-slate-400 mb-1">อีเมล (อ่านอย่างเดียว)</label>
@@ -377,7 +442,7 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 				<button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-3 rounded-lg shadow-lg shadow-cyan-500/20 transition">อัปเดตข้อมูลส่วนตัว</button>
 			</form>
 		</div>`, user.Email, user.FullName, user.Department)
-		tpl.Execute(w, template.HTML(html))
+		renderPage(w, r, html)
 		return
 	}
 
@@ -397,8 +462,14 @@ func AdminDashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	statusFilter := r.URL.Query().Get("status")
+	query := db.Preload("User").Order("created_at desc")
+	if statusFilter != "" {
+		query = query.Where("status = ?", statusFilter)
+	}
+
 	var allTickets []Ticket
-	db.Preload("User").Order("created_at desc").Find(&allTickets)
+	query.Find(&allTickets)
 
 	var totalUsers int64
 	db.Model(&User{}).Count(&totalUsers)
@@ -407,11 +478,21 @@ func AdminDashboardPage(w http.ResponseWriter, r *http.Request) {
 	html := fmt.Sprintf(`
 	<div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl mb-8">
 		<h1 class="text-2xl font-bold text-amber-400 mb-2">👑 IT Support Admin Dashboard</h1>
-		<p class="text-slate-400 text-sm">ผู้ใช้งานในระบบ: <span class="text-cyan-400 font-bold">%d คน</span> | คำขอแจ้งซ่อมทั้งหมด: <span class="text-cyan-400 font-bold">%d รายการ</span></p>
+		<p class="text-slate-400 text-sm">ผู้ใช้งานในระบบ: <span class="text-cyan-400 font-bold">%d คน</span> | รายการแสดงผล: <span class="text-cyan-400 font-bold">%d รายการ</span></p>
 	</div>
 
 	<div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-		<h2 class="text-xl font-bold mb-4">รายการแจ้งซ่อมของพนักงานทั้งหมด</h2>
+		<div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+			<h2 class="text-xl font-bold">รายการแจ้งซ่อมทั้งหมด</h2>
+			<!-- Filter Status Buttons -->
+			<div class="flex gap-2 text-xs font-semibold">
+				<a href="/admin" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition">ทั้งหมด</a>
+				<a href="/admin?status=Pending" class="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition">Pending</a>
+				<a href="/admin?status=In-Progress" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition">In-Progress</a>
+				<a href="/admin?status=Resolved" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition">Resolved</a>
+			</div>
+		</div>
+
 		<div class="overflow-x-auto">
 			<table class="w-full text-left border-collapse">
 				<thead>
@@ -419,9 +500,11 @@ func AdminDashboardPage(w http.ResponseWriter, r *http.Request) {
 						<th class="p-3">ID</th>
 						<th class="p-3">ผู้แจ้งเรื่อง</th>
 						<th class="p-3">หัวข้อปัญหา</th>
-						<th class="p-3">ประเภทอุปกรณ์</th>
-						<th class="p-3">สถานะงาน</th>
+						<th class="p-3">ความด่วน</th>
+						<th class="p-3">สถานะ</th>
+						<th class="p-3">วันที่แจ้ง</th>
 						<th class="p-3">อัปเดตสถานะงาน</th>
+						<th class="p-3">จัดการ</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-800/50 text-sm">`, totalUsers, len(allTickets))
@@ -429,27 +512,31 @@ func AdminDashboardPage(w http.ResponseWriter, r *http.Request) {
 	for _, t := range allTickets {
 		html += fmt.Sprintf(`<tr>
 			<td class="p-3">#%d</td>
-			<td class="p-3 font-semibold">%s <span class="text-xs font-normal text-slate-500">(%s)</span></td>
-			<td class="p-3 text-cyan-400">%s</td>
+			<td class="p-3 font-semibold">%s <span class="text-xs font-normal text-slate-500 block">%s</span></td>
+			<td class="p-3 text-cyan-400 font-medium">%s</td>
 			<td class="p-3">%s</td>
-			<td class="p-3"><span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">%s</span></td>
+			<td class="p-3">%s</td>
+			<td class="p-3 text-slate-400 text-xs">%s</td>
 			<td class="p-3">
 				<form method="POST" class="flex gap-2">
 					<input type="hidden" name="ticket_id" value="%d">
-					<select name="status" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+					<select name="status" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none">
 						<option value="Pending" %s>Pending</option>
 						<option value="In-Progress" %s>In-Progress</option>
 						<option value="Resolved" %s>Resolved</option>
 					</select>
-					<button type="submit" class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-1 rounded text-xs hover:bg-amber-500/40">บันทึก</button>
+					<button type="submit" class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-1 rounded text-xs hover:bg-amber-500/40 transition">บันทึก</button>
 				</form>
 			</td>
-		</tr>`, t.ID, t.User.FullName, t.User.Email, t.Title, t.DeviceType, t.Status, t.ID,
-			selectAttr(t.Status, "Pending"), selectAttr(t.Status, "In-Progress"), selectAttr(t.Status, "Resolved"))
+			<td class="p-3">
+				<a href="/tickets/delete?id=%d" class="text-rose-400 hover:underline text-xs" onclick="return confirm('ยืนยันลบรายการนี้?')">ลบตั๋ว</a>
+			</td>
+		</tr>`, t.ID, t.User.FullName, t.User.Email, t.Title, getPriorityBadge(t.Priority), getStatusBadge(t.Status), t.CreatedAt.Format("02/01/2006 15:04"), t.ID,
+			selectAttr(t.Status, "Pending"), selectAttr(t.Status, "In-Progress"), selectAttr(t.Status, "Resolved"), t.ID)
 	}
 
 	html += `</tbody></table></div></div>`
-	tpl.Execute(w, template.HTML(html))
+	renderPage(w, r, html)
 }
 
 func selectAttr(currentStatus, target string) string {
